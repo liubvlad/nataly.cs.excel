@@ -11,7 +11,6 @@
     public partial class Form1 : Form
     {
         string folderName = "temp";
-        int excelMaxPages = 0;
 
         public Form1()
         {
@@ -26,31 +25,18 @@
             openFileDialog.Title = "Выберите документ для загрузки данных";
             if (openFileDialog.ShowDialog() == DialogResult.OK)
             {
+                progressBar1.Increment(progressBar1.Maximum / 100);
 
                 // подзагрузка элементов
-                excelMaxPages = GetPages(openFileDialog.FileName);
-                if (excelMaxPages > 0)
-                {
-                    int increment = progressBar1.Maximum / excelMaxPages;
-                    progressBar1.Increment(progressBar1.Maximum / 100);
-                    for (int page = 1; page <= excelMaxPages; page++)
-                    {
-                        var dataTable = ReadDataExcel(openFileDialog.FileName, comboBox1, page);
-                        ConvertTableToTxt(dataTable, page);
-                        progressBar1.Increment(increment);
-                    }
-                    progressBar1.Value = progressBar1.Maximum;
+                ReadDataExcel(openFileDialog.FileName, comboBox1);
 
-                    MessageBox.Show("Данные были загружены!");
-                    progressBar1.Value = progressBar1.Minimum;
-                    if (comboBox1.Items.Count > 0)
-                    {
-                        comboBox1.SelectedIndex = 0;
-                    }
-                }
-                else
+                progressBar1.Value = progressBar1.Maximum;
+
+                MessageBox.Show("Данные были загружены!");
+                progressBar1.Value = progressBar1.Minimum;
+                if (comboBox1.Items.Count > 0)
                 {
-                    MessageBox.Show("Файл пуст или не существует.");
+                    comboBox1.SelectedIndex = 0;
                 }
             }
         }
@@ -81,51 +67,76 @@
             return 0;
         }
 
-        private static DataTable ReadDataExcel(string fileName, ComboBox comboBox, int pageToOpen)
+        private void ReadDataExcel(string fileName, ComboBox comboBox)
         {
             Excel.Application excelApp = new Excel.Application();
             Excel.Workbook excelBooks;
             Excel.Worksheet excelPages;
             Excel.Range excelCells;
 
+
             var maxColls = 1;
-            var dataTable = new DataTable();
             try
             {
                 //открытие файла
                 excelBooks = excelApp.Workbooks.Open(fileName);
-
-                //Устанавливаем номер листа из котрого будут извлекаться данные (Листы нумеруются от 1)
-                excelPages = (Excel.Worksheet)excelBooks.Sheets.get_Item(pageToOpen);
-                excelCells = excelPages.UsedRange; //все ячейки, содержащие значения на данный момент
-                                                   //имя колонок
-                var titleRow = 1;
-                var titleColl = 1;
-                for (int coll = 1; coll <= maxColls; coll++)
+                var excelMaxPages = excelBooks.Sheets.Count;
+                progressBar1.Step = progressBar1.Maximum / excelMaxPages;
+                if (excelMaxPages > 0)
                 {
-                    dataTable.Columns.Add(new DataColumn((excelCells.Cells[titleRow, titleColl] as Excel.Range).Value2.ToString()));
-                }
-              
-                dataTable.AcceptChanges();
-
-                var columnName = String.Empty;
-                columnName = dataTable.Columns[0].ColumnName;
-                // добавляем заголовки таблиц в выпадающий список
-                comboBox.Items.Add(columnName);
-                for (var row = 2; row <= excelCells.Rows.Count; row++)
-                {
-                    var dataRow = dataTable.NewRow();
-                    for (int coll = 1; coll <= maxColls; coll++)
+                    for (int page = 1; page <= excelMaxPages; page++)
                     {
-                        if ((excelCells.Cells[row, coll] as Excel.Range).Value2 != null)
+                        try
                         {
-                            dataRow[coll - 1] = (excelCells.Cells[row, coll] as Excel.Range).Value2.ToString();
+                            var dataTable = new DataTable();
+                            //Устанавливаем номер листа из котрого будут извлекаться данные (Листы нумеруются от 1)
+                            excelPages = (Excel.Worksheet)excelBooks.Sheets.get_Item(page);
+                            excelCells = excelPages.UsedRange; //все ячейки, содержащие значения на данный момент
+                                                               //имя колонок
+                            var titleRow = 1;
+                            var titleColl = 1;
+                            for (int coll = 1; coll <= maxColls; coll++)
+                            {
+                                dataTable.Columns.Add(new DataColumn((excelCells.Cells[titleRow, titleColl] as Excel.Range).Value2.ToString()));
+                            }
+
+                            dataTable.AcceptChanges();
+
+                            var columnName = String.Empty;
+                            columnName = dataTable.Columns[0].ColumnName;
+                            // добавляем заголовки таблиц в выпадающий список
+                            comboBox.Items.Add(columnName);
+                            for (var row = 2; row <= excelCells.Rows.Count; row++)
+                            {
+                                var dataRow = dataTable.NewRow();
+                                for (int coll = 1; coll <= maxColls; coll++)
+                                {
+                                    if ((excelCells.Cells[row, coll] as Excel.Range).Value2 != null)
+                                    {
+                                        dataRow[coll - 1] = (excelCells.Cells[row, coll] as Excel.Range).Value2.ToString();
+                                    }
+                                }
+                                // Добавляем в таблицу строку данных
+                                dataTable.Rows.Add(dataRow);
+                                dataTable.AcceptChanges();
+                            }
+
+                            // Запись страницы в txt
+                            ConvertTableToTxt(dataTable, page);
                         }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Ошибка: " + ex.Message);
+                        }
+                        progressBar1.PerformStep();
                     }
-                    // Добавляем в таблицу строку данных
-                    dataTable.Rows.Add(dataRow);
-                    dataTable.AcceptChanges();
+
                 }
+                else
+                {
+                    MessageBox.Show("Файл пуст или не существует.");
+                }
+
 
                 excelBooks.Close();
                 excelApp?.Quit();
@@ -134,7 +145,6 @@
             {
                 MessageBox.Show("Ошибка: " + ex.Message);
             }
-            return dataTable;
         }
 
         private void ConvertTableToTxt(DataTable dataTable, int page)
